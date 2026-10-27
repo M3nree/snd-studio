@@ -43,6 +43,18 @@ app.use((req, res, next) => {
   res.set('Expires', '0');
   next();
 });
+
+app.get('/version.json', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.json({
+    version: 'v2.0.3',
+    builtAt: new Date().toISOString(),
+    commit: process.env.RENDER_GIT_COMMIT || null
+  });
+});
+
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, maxAge: 0 }));
 
 /* ===== лимиты: защита общего бесплатного ключа ===== */
