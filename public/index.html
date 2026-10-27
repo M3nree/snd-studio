@@ -2812,6 +2812,14 @@ function renderExamplePrompts(){
 
 /* ================================================== init */
 async function init(){
+  try {
+    const v = await fetch('/version.json', { cache: 'no-store' });
+    if (v.ok){
+      const j = await v.json();
+      const el = document.getElementById('siteVersion');
+      if (el && j.version) el.textContent = j.version;
+    }
+  } catch(e){}
   rebuildInstMap();
   renderPalette();
   loadHotkeys();
