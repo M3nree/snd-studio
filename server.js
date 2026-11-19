@@ -44,12 +44,24 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get('/diag', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.json({
+    ok: true,
+    serverTime: new Date().toISOString(),
+    commit: process.env.RENDER_GIT_COMMIT || 'unknown',
+    version: 'v2.0.4'
+  });
+});
+
 app.get('/version.json', (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
   res.json({
-    version: 'v2.0.3',
+    version: 'v2.0.4',
     builtAt: new Date().toISOString(),
     commit: process.env.RENDER_GIT_COMMIT || null
   });
