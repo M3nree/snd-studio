@@ -52,7 +52,7 @@ app.get('/diag', (req, res) => {
     ok: true,
     serverTime: new Date().toISOString(),
     commit: process.env.RENDER_GIT_COMMIT || 'unknown',
-    version: 'v2.0.4'
+    version: 'v2.0.5'
   });
 });
 
@@ -61,7 +61,7 @@ app.get('/version.json', (req, res) => {
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
   res.json({
-    version: 'v2.0.4',
+    version: 'v2.0.5',
     builtAt: new Date().toISOString(),
     commit: process.env.RENDER_GIT_COMMIT || null
   });
