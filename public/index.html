@@ -420,19 +420,34 @@ function createReverb(ctx){
   try {
     const convolver = ctx.createConvolver();
     const rate = ctx.sampleRate;
-    const length = Math.floor(rate * 1.6);
+    const length = Math.floor(rate * 2.4);
     const impulse = ctx.createBuffer(2, length, rate);
     for (let ch = 0; ch < 2; ch++){
       const data = impulse.getChannelData(ch);
+      // ранние отражения (early reflections)
+      const erDelays = [0.012, 0.019, 0.027, 0.038, 0.051, 0.067];
+      for (const d of erDelays){
+        const idx = Math.floor(d * rate);
+        if (idx < length) data[idx] += (Math.random() * 2 - 1) * 0.35 * (ch === 0 ? 1 : 0.8);
+      }
+      // основной хвост (late reverb)
       for (let i = 0; i < length; i++){
         const t = i / length;
-        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.2) * 0.25;
+        const env = Math.pow(1 - t, 2.8);
+        data[i] += (Math.random() * 2 - 1) * env * 0.22;
+      }
+      // высокочастотное затухание (air absorption)
+      let lp = 0;
+      for (let i = 0; i < length; i++){
+        const x = data[i];
+        lp = lp * 0.85 + x * 0.15;
+        data[i] = lp * 0.6 + x * 0.4;
       }
     }
     convolver.buffer = impulse;
-    const rvb = ctx.createGain(); rvb.gain.value = 0.18;
+    const rvb = ctx.createGain(); rvb.gain.value = 0.22;
     convolver.connect(rvb); rvb.connect(ctx.destination);
-    const send = ctx.createGain(); send.gain.value = 0.16;
+    const send = ctx.createGain(); send.gain.value = 0.2;
     send.connect(convolver);
     return { convolver, rvb, send };
   } catch(e){
@@ -629,71 +644,110 @@ SYNTHS.kick = function(ctx, dest, t, f, dur, vol){
   const out = ctx.createGain(); out.gain.value = 1; out.connect(dest);
   const ws = ctx.createWaveShaper();                    // сатурейшн для панча
   const NC = 512, curve = new Float32Array(NC);
-  for (let i = 0; i < NC; i++){ const x = (i / (NC - 1)) * 2 - 1; curve[i] = Math.tanh(2.2 * x); }
+  for (let i = 0; i < NC; i++){ const x = (i / (NC - 1)) * 2 - 1; curve[i] = Math.tanh(2.6 * x); }
   ws.curve = curve; ws.connect(out);
-  const o = ctx.createOscillator(); o.type = 'sine';    // тело бочки
-  o.frequency.setValueAtTime(180 * r, t);
-  o.frequency.exponentialRampToValueAtTime(46 * r, t + 0.075);
-  o.frequency.exponentialRampToValueAtTime(38 * r, t + 0.4);
+  // суб-бас слой (глубина)
+  const sub = ctx.createOscillator(); sub.type = 'sine';
+  sub.frequency.setValueAtTime(55 * r, t);
+  sub.frequency.exponentialRampToValueAtTime(32 * r, t + 0.12);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.0001, t);
+  sg.gain.linearRampToValueAtTime(vol * 0.7, t + 0.003);
+  sg.gain.exponentialRampToValueAtTime(vol * 0.25, t + 0.15);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  sub.connect(sg); sg.connect(ws);
+  trackSource(sub); sub.start(t); sub.stop(t + 0.55);
+  // тело бочки
+  const o = ctx.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(160 * r, t);
+  o.frequency.exponentialRampToValueAtTime(52 * r, t + 0.06);
+  o.frequency.exponentialRampToValueAtTime(40 * r, t + 0.35);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(vol * 1.15, t + 0.004);
-  g.gain.exponentialRampToValueAtTime(vol * 0.4, t + 0.11);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.46);
+  g.gain.linearRampToValueAtTime(vol * 1.2, t + 0.003);
+  g.gain.exponentialRampToValueAtTime(vol * 0.5, t + 0.09);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
   o.connect(g); g.connect(ws);
   trackSource(o); o.start(t); o.stop(t + 0.5);
-  const ck = ctx.createBufferSource(); ck.buffer = getNoise(ctx, 0.02); // «щелчок» бички
-  const cf = ctx.createBiquadFilter(); cf.type = 'highpass'; cf.frequency.value = 3200 * Math.min(2, r);
+  // щелчок (click)
+  const ck = ctx.createBufferSource(); ck.buffer = getNoise(ctx, 0.015);
+  const cf = ctx.createBiquadFilter(); cf.type = 'highpass'; cf.frequency.value = 2800 * Math.min(2, r);
   const cg = ctx.createGain();
-  cg.gain.setValueAtTime(vol * 0.5, t);
-  cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.014);
+  cg.gain.setValueAtTime(vol * 0.65, t);
+  cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.012);
   ck.connect(cf); cf.connect(cg); cg.connect(dest);
-  trackSource(ck); ck.start(t); ck.stop(t + 0.03);
+  trackSource(ck); ck.start(t); ck.stop(t + 0.02);
+  // реверб для глубины
+  if (reverbNode && Math.random() < 0.3){
+    const sg2 = ctx.createGain(); sg2.gain.value = vol * 0.08;
+    out.connect(sg2); sg2.connect(reverbNode);
+  }
 };
 SYNTHS.snare = function(ctx, dest, t, f, dur, vol){
   const r = f / BASE_FREQ;
-  const o = ctx.createOscillator(); o.type = 'triangle'; // «тело» снейра
-  o.frequency.setValueAtTime(215 * r, t);
-  o.frequency.exponentialRampToValueAtTime(150 * r, t + 0.08);
+  // тело снейра (основной тон)
+  const o = ctx.createOscillator(); o.type = 'triangle';
+  o.frequency.setValueAtTime(200 * r, t);
+  o.frequency.exponentialRampToValueAtTime(130 * r, t + 0.06);
   const og = ctx.createGain();
-  og.gain.setValueAtTime(vol * 0.5, t);
-  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+  og.gain.setValueAtTime(vol * 0.6, t);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
   o.connect(og); og.connect(dest);
-  trackSource(o); o.start(t); o.stop(t + 0.14);
-  const j = ctx.createOscillator(); j.type = 'sine';     // «звон» корпуса
-  j.frequency.setValueAtTime(330 * r, t);
-  j.frequency.exponentialRampToValueAtTime(180 * r, t + 0.05);
+  trackSource(o); o.start(t); o.stop(t + 0.16);
+  // резонанс корпуса (ring)
+  const j = ctx.createOscillator(); j.type = 'sine';
+  j.frequency.setValueAtTime(380 * r, t);
+  j.frequency.exponentialRampToValueAtTime(220 * r, t + 0.04);
   const jg = ctx.createGain();
-  jg.gain.setValueAtTime(vol * 0.3, t);
-  jg.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+  jg.gain.setValueAtTime(vol * 0.35, t);
+  jg.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
   j.connect(jg); jg.connect(dest);
-  trackSource(j); j.start(t); j.stop(t + 0.1);
-  const ns = ctx.createBufferSource(); ns.buffer = getNoise(ctx, 0.4); // хрустящий шум
-  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900 * r;
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1900 * r; bp.Q.value = 0.9;
+  trackSource(j); j.start(t); j.stop(t + 0.12);
+  // хрустящий шум (sticks)
+  const ns = ctx.createBufferSource(); ns.buffer = getNoise(ctx, 0.5);
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1200 * r;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2200 * r; bp.Q.value = 1.1;
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(vol * 0.95, t + 0.002);
-  g.gain.exponentialRampToValueAtTime(vol * 0.3, t + 0.06);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+  g.gain.linearRampToValueAtTime(vol * 1.0, t + 0.0015);
+  g.gain.exponentialRampToValueAtTime(vol * 0.35, t + 0.04);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
   ns.connect(hp); hp.connect(bp); bp.connect(g); g.connect(dest);
-  trackSource(ns); ns.start(t); ns.stop(t + 0.32);
+  trackSource(ns); ns.start(t); ns.stop(t + 0.28);
+  // реверб для глубины
+  if (reverbNode && Math.random() < 0.25){
+    const sg = ctx.createGain(); sg.gain.value = vol * 0.12;
+    g.connect(sg); sg.connect(reverbNode);
+  }
 };
 SYNTHS.hat = function(ctx, dest, t, f, dur, vol){
   const r = f / BASE_FREQ;
-  const base = 320 * Math.min(2, Math.max(0.6, r));
-  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 10000; bp.Q.value = 0.9;
-  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7600;
-  const g = ctx.createGain();                           // металлический кластер (808-рецепт)
-  g.gain.setValueAtTime(vol * 0.75, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.075);
+  const base = 280 * Math.min(2, Math.max(0.6, r));
+  const closed = dur < 0.15;
+  const decay = closed ? 0.06 : 0.25;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 9500; bp.Q.value = 1.2;
+  const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(vol * 0.65, t);
+  g.gain.exponentialRampToValueAtTime(vol * 0.2, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
   bp.connect(hp); hp.connect(g); g.connect(dest);
-  for (const ratio of [2, 3, 4.16, 5.43, 6.79, 8.21]){
+  // металлические партиалы
+  for (const ratio of [2, 3, 4.16, 5.43, 6.79, 8.21, 9.5]){
     const o = ctx.createOscillator(); o.type = 'square';
     o.frequency.value = base * ratio;
-    o.connect(bp);
-    trackSource(o); o.start(t); o.stop(t + 0.12);
+    const og = ctx.createGain(); og.gain.value = 0.4 / (ratio * 0.3 + 1);
+    o.connect(og); og.connect(bp);
+    trackSource(o); o.start(t); o.stop(t + decay + 0.05);
   }
+  // шумовой слой (воздух)
+  const ns = ctx.createBufferSource(); ns.buffer = getNoise(ctx, 0.1);
+  const nhp = ctx.createBiquadFilter(); nhp.type = 'highpass'; nhp.frequency.value = 8000;
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(vol * 0.25, t);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + decay * 0.7);
+  ns.connect(nhp); nhp.connect(ng); ng.connect(dest);
+  trackSource(ns); ns.start(t); ns.stop(t + decay + 0.05);
 };
 SYNTHS.cymbal = function(ctx, dest, t, f, dur, vol){
   const d = Math.max(0.35, dur);
