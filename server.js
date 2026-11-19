@@ -67,6 +67,16 @@ app.get('/version.json', (req, res) => {
   });
 });
 
+app.get('/', (req, res) => {
+  const fs = require('fs');
+  let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+  html = html.replace('</head>', '<meta name="server-time" content="' + new Date().toISOString() + '">\n</head>');
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  res.type('html').send(html);
+});
+
 app.use(express.static(path.join(__dirname, 'public'), { etag: false, lastModified: false, maxAge: 0 }));
 
 /* ===== лимиты: защита общего бесплатного ключа ===== */
